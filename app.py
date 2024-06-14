@@ -8,25 +8,24 @@ from langchain.chains import RetrievalQA
 from dotenv import load_dotenv
 from src.prompt import *
 import os
-
+from pinecone import Pinecone
 app = Flask(__name__)
 
-load_dotenv()
 
-PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
-PINECONE_API_ENV = os.environ.get('PINECONE_API_ENV')
+
+
+# PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
+# PINECONE_API_ENV = os.environ.get('PINECONE_API_ENV')
 
 
 embeddings = download_hugging_face_embeddings()
 
 #Initializing the Pinecone
-pinecone.init(api_key=PINECONE_API_KEY,
-              environment=PINECONE_API_ENV)
-
-index_name="medical-bot"
+pc = Pinecone(api_key="8d8905b7-a0c9-4765-b687-639f837aa7dd")
+index = pc.Index("medical-bot")
 
 #Loading the index
-docsearch=Pinecone.from_existing_index(index_name, embeddings)
+# docsearch=Pinecone.from_existing_index(index_name, embeddings)
 
 
 PROMPT=PromptTemplate(template=prompt_template, input_variables=["context", "question"])
@@ -38,11 +37,20 @@ llm=CTransformers(model="model/llama-2-7b-chat.ggmlv3.q4_0.bin",
                   config={'max_new_tokens':512,
                           'temperature':0.8})
 
+from langchain.vectorstores import Pinecone as LangchainPinecone
+text_field = "text"
+vectorstore = LangchainPinecone(
+    index=index,
+    embedding_function=embeddings.embed_query,
+    text_key=text_field
+)
+
+
 
 qa=RetrievalQA.from_chain_type(
     llm=llm, 
     chain_type="stuff", 
-    retriever=docsearch.as_retriever(search_kwargs={'k': 2}),
+    retriever=vectorstore.as_retriever(top_k=3),
     return_source_documents=True, 
     chain_type_kwargs=chain_type_kwargs)
 
@@ -58,8 +66,8 @@ def index():
 def chat():
     msg = request.form["msg"]
     input = msg
-    print(input)
-    result=qa({"query": input})
+    print(dir(qa))
+    result=qa.invoke({"query": input})
     print("Response : ", result["result"])
     return str(result["result"])
 
@@ -67,5 +75,3 @@ def chat():
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port= 8080, debug= True)
-
-
